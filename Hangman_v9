@@ -1,0 +1,287 @@
+# Authors: Nicole Casartelli, Samuel Shin, Cynthia Luong
+# Last Modified: 6/24
+# Description: V 9.0 
+#	       		A Hangman game that terminates when either the player has guessed the word or run out of lives (completed the hanged-man)
+#			Only letters (a-z) and (A-Z) are vaild inputs
+.data
+
+	# Drawing Hangman Strings	
+	gallowTop: 	.asciiz "   |----|\n"
+	middleLine: 	.asciiz "   |    |\n"
+	gallowPole: 	.asciiz "	|\n"
+	gallowBottom: 	.asciiz "__________\n\n"
+	
+	head: 		.asciiz "   O    |\n"
+	
+	armOne: 	.asciiz "  ~|    |\n"
+	armTwo: 	.asciiz "  ~|~   |\n"
+	
+	legOne: 	.asciiz "  /     |\n"
+	legTwo: 	.asciiz "  / \\   |\n"
+	
+	# Game info for the player
+	wordMsg:	.asciiz "Word: "
+	misses: 	.asciiz "Misses: "
+	guess: 		.asciiz "\nGuess a letter: "
+	welcome: 	.asciiz "Welcome to Hangman! Guess all the letters of the word (individually!) before the gallows are completed to win!\n\n"
+	invalidInput:	.asciiz "\nInvalid input, please enter an alphabetic character in range of (a-z) or (A-Z)"
+	loseMsg: 	.asciiz "\nYou've lost! Press play to try again."
+	winMsg:		.asciiz "\nCongratulations, you've won!"
+	correct:	.asciiz "\nCorrect!\n"
+	incorrect:	.asciiz "\nNot correct.\n"
+	already: 	.asciiz "\nYou already guessed this letter\n"
+	final: 		.asciiz "\nThe word was... "
+	
+	wordLength:	.word 8	
+	missedLetters: 	.word ' ',' ',' ',' ',' ',' ' # up to 6 guesses
+	guessedString:	.byte '-','-','-','-','-','-','-','-', '-', '-','-', '-', '-','-', '-', '-','-', '-', '-'
+	
+	answer:		.asciiz "dinosaur"
+	guessedSpace:	.space 26		
+
+.text
+### Macro call
+	.include "Hangman_v9_Macros"
+
+### Welcome message and game initialization 
+	
+	start:
+		Print_String (welcome)			# Welcome player to game
+		
+		li 	$s0, 0				# Set number of wrong guesses to zero at the beginning of the game
+		li 	$s1, 0				# Set number of correct guesses to zero at the beginning of the game
+		lw 	$s2, wordLength			# $s2 holds the length of the word 
+		la 	$s3, guessedString		# Set guessed string
+		la 	$s4, missedLetters		# Set missed letters
+
+### Main game logic
+	
+	## Master loop
+	run_game:	
+		Next_Line
+		
+		# Print the gallows, guessed letters, and missed letters
+		move 	$a1, $s0 			# Argument: number of wrong guesses
+		jal 	draw_man
+		Print_String (wordMsg)			# Print "Word:"
+		Print_Word ($s3)			# Print guessed string
+		Next_Line
+		Print_String (misses)			# Print "Misses:"
+		Print_Misses ($s4)			# Print missed letters
+			
+		# Request user	input, check is a vaild input
+		jal 	ask_char			# Jumps to the ask_char where user inputs a character
+		la 	$a1, answer			# Store the correct word in run_game loop
+		la 	$a0, guessedSpace        		    	
+		move	$a2, $v0 			# Copies the input character to a2
+	
+		# Check that the input is a new letter
+		jal 	update_guess 			# Make sure we have not previously guessed this
+		bne 	$v0, $0, already_guessed	# Continue as if it was a correct answer
+		
+		# Check whether the input is a correct letter or not
+		jal 	in_word
+		beq 	$v0, $0, not_in_word
+		
+		# Print the character
+		li 	$v0, 12 			# Print a character
+		syscall
+		Print_String(correct)			# Prints out "correct!" if the user guesses right
+		j	char_in_word			# Jumps to char_in_word	
+	
+	## User already input this letter
+	already_guessed:
+		Print_String(already)			# Print already guessed letter
+		j 	run_game			# Jumps back to run_game loop
+	
+	## Check if user input is in the answer, if it is, update to show its location
+	char_in_word:
+		beq	$s1, $s2, win			# Correct guesses == Letters in word
+		Add_To_Guessed ($a2)
+		j 	run_game
+
+	## If user input is not in the answer, add to the wrong answer list
+	not_in_word:
+		li 	$v0, 12 			# Print a character
+		syscall
+		Print_String (incorrect)		# Print incorrect message
+		addiu 	$s0, $s0, 1  			# Increment incorrect guesses
+		
+		Add_To_Missed ($a2)
+		
+		beq 	$s0, 6, lose			# If $s0 equals max amount of incorrect guesses, go to lose
+		j 	run_game			# Jump back to main run_game loop
+
+	## User guesses the answer
+	win:
+		# winning message
+		Print_String(winMsg)			# Print winning message
+		Print_String (final)			# Final message
+		Print_String (answer)			# Answer
+		j 	exit				# Jump to exit
+	
+	## The hanged-man is completed and the user loses
+	lose:	
+		Next_Line
+		jal 	draw_man		
+		Print_String(loseMsg)			# Losing message
+		Print_String (final)			# Final message
+		Print_String (answer)			# Answer
+		j 	exit				# Jump to exit
+		
+### Exit
+	exit:
+		li 	$v0, 10				# Call for exit
+		syscall
+
+### Process user input
+	
+	## Ask for user guess
+	ask_char:
+		addi 	$sp, $sp, -12			# Allocate
+		sw 	$ra, 0($sp)			# Store old ra
+		sw 	$a0, 4($sp)			# Store old a0
+		sw 	$s0, 8($sp)			# Store old s0
+	
+		la	$a0, guess 			# Guess a character
+		syscall
+		li 	$v0, 12				# 12 is the function code for reading a character
+		syscall					# v0 contains a character
+	
+		bge	$v0, 0x61, return_char		# Lowercase
+		addi	$v0, $v0, 0x20			# Convert to lowercase	
+		
+	## Return the user's guess	
+	return_char:
+		blt	$v0, 0x61, invalid_char		# Less than 'a'
+		bgt	$v0, 0x7a, invalid_char		# Greater than 'z'
+		lw	$ra, 0($sp)			# Load old ra
+		lw 	$a0, 4($sp)			# Load old a0
+		lw 	$s0, 8($sp)			# Load old s0
+		addi 	$sp, $sp, 12			# Deallocate
+		jr 	$ra				# Return
+	
+	## Called if user guess is not a-z or A-Z
+	invalid_char:
+		li	$v0, 4				# 4 is the function code for printing a string
+		la	$a0, invalidInput		# Prints: "Invalid input, please enter an alphabetic character in range of a-z"
+		syscall
+		j	ask_char		
+	
+	
+### Character in string checker
+	
+	## If the user guesses a correct letter in word, $s1 will increment, and if $s1 == $s2 (word length), user wins
+	in_word:
+		addi	$sp, $sp, -4			# Allocate 4 bytes
+		sw 	$a1, 0($sp)			# Store old a0
+		li 	$v0, 0				# Set $v0 to 0 or false
+	in_word_iterator:
+		lb	$t0, 0($a1)			# Load character from the string
+		beq	$t0, $0, in_word_break		# Stop loop if the end of the string is reached
+		addi 	$a1, $a1, 1			# Increment the string address to continue scanning
+		beq	$t0, $a2, in_found		# Branch if character matches
+		j 	in_word_iterator		# Jump back to the loop
+	in_found:
+		addi 	$s1, $s1, 1			# Increment the number of correct guesses
+		li	$v0, 1				# If character is found, we will return the value of 1
+		j	in_word_iterator
+	in_word_break:
+		lw	$a1, 0($sp)			# Loading the old value in $a1
+		addi	$sp, $sp, 4			# Deallocate space in stack
+		jr	$ra				# Return to the caller	
+
+		
+	### Guess logic
+	update_guess:
+		addi 	$sp, $sp, -8			# Allocate 4 bytes
+		sw 	$a1, 0($sp)			# Store old a0
+		sw 	$a0, 4($sp)			# Store old a1
+		li 	$v0, 0 				# Whether or not it was found
+	update_guess_iter:
+		lb 	$t0, 0($a0)			# Load character from string
+		beq 	$t0, $0, update_guess_iter_brk	# Stop loop if its the end on string
+		bne 	$t0, $a2, char_not_in_word	# Branch if character doens match
+		li 	$v0, 1
+	char_not_in_word:
+		addi	$a0, $a0, 1			# Increment guessed buffer
+		j 	update_guess_iter		# Jump to break
+	
+	update_guess_iter_brk:
+		sb 	$a2, 0($a0)			# Store passed character in position || stores a stack with incorrect guesses
+		lw 	$a0, 4($sp)			# Load old a1
+		lw 	$a1, 0($sp)			# Load old a0
+		addi 	$sp, $sp, 8			# Deallocate space in stack
+		jr 	$ra				# Return
+
+	
+### Print Visuals
+	
+	## Drawing gallows, argument = (# of wrong guesses)
+	draw_man:
+		Print_String (gallowTop)		# Print top of gallows
+		Print_String (middleLine)		# Print noose
+	
+		beq 	$a1, 0, miss_0			# No missed letters
+		bge 	$a1, 1, miss_1_to_6		# At least one missed letter
+
+		miss_0:
+			li 	$t2, 5			# n in main draw for loop
+			j 	start_draw_loop
+		
+		miss_1_to_6:
+			Print_String (head)		# Print head
+	
+			beq 	$a1, 2, miss_2		# If two missed letters (draw one arm)
+			bge 	$a1, 3, miss_3_to_6	# If 3 or more missed letters (always draw 2 arms)
+		
+			# If one missed letter
+			li 	$t2, 4			# n in main draw for loop
+			j 	start_draw_loop
+		
+			miss_2:
+				Print_String (middleLine)	# Draw upper back
+				Print_String (middleLine)	# Draw lower back
+	
+				li 	$t2, 2			# n in main draw for loop
+				j 	start_draw_loop
+			
+			miss_3_to_6:
+				li 	$t2, 2			# n in main draw for loop, it is the same for 3 and 4 wrong guesses
+			
+				bge 	$a1, 4, miss_4_to_6	# If 4 or more missed letters (print both arms)
+			
+				Print_String (armOne)		# Draw one arm
+				Print_String (middleLine)	# Draw lower back
+	
+				j 	start_draw_loop
+			
+				miss_4_to_6:
+					Print_String (armTwo)		# Draw two arms
+					Print_String (middleLine)	# Draw lower back
+				
+					beq 	$a1, 4, start_draw_loop	# If 4 missed letters skip to start_draw_loop
+				
+					li 	$t2, 1			# n in main draw for loop, it is the same for 5 and 6 wrong guesses
+					beq 	$a1, 5, miss_5		# If 5 missed letters (print one leg)
+				
+					Print_String (legTwo)		# If 6 missed letters Draw two legs
+				
+					j 	start_draw_loop
+				
+					miss_5:
+						Print_String (legOne)	# Draw one leg
+		
+		# For Loop	
+		start_draw_loop:
+			li 	$t1, 0				# t0 is i
+	
+			draw_for_loop:				
+				Print_String (gallowPole)	# Print gallows' pole
+				addi 	$t1, $t1, 1		# i++
+	
+				blt  	$t1, $t2, draw_for_loop	# If i < n then continue the loop
+		
+		Print_String (gallowBottom)			# Print floor of gallows
+
+		jr 	$ra					# Return to function call
