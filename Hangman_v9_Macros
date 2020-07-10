@@ -1,0 +1,82 @@
+# Authors: Nicole Casartelli, Samuel Shin, Cynthia Luong
+# Last Modified: 6/24
+# Description: 		.macros for Hangman, compatible with Hangman V 9.0 
+	       		
+.data
+	newLine: 	.asciiz "\n"
+
+.text
+	## Start on a new line
+	.macro Next_Line
+		li 	$v0, 4		
+		la 	$a0, newLine
+		syscall
+	.end_macro 
+
+	## Print a predefined string
+	.macro Print_String %x
+		li 	$v0, 4
+		la 	$a0, %x
+		syscall
+	.end_macro 
+
+	## Printing the word showing guessed and still-blank letters
+	.macro Print_Word %reg				# reg = letters to be printed
+		li 	$t1, 0				# t1 = index
+		printLoop:
+			li	$v0, 11			# Print the current letter
+			lb 	$a0, 0(%reg)
+			syscall
+			addi 	%reg, %reg, 1		# Go to next letter
+			addi 	$t1, $t1, 1    		# Increment index
+			blt 	$t1, $s2, printLoop	# Loop if index < word length
+			
+		sub 	%reg, %reg, $t1			# Reset letter position back to start
+		Next_Line
+	.end_macro
+
+	## Printing all incorrect letters guessed
+	.macro Print_Misses %reg			# reg = letters to be printed
+		li 	$t1, 0				# t1 = index
+		printLoop:
+			li 	$v0, 11			# Print the current letter
+			lb 	$a0, 0(%reg)
+			syscall
+			addi 	%reg, %reg, 1		# Go to next Letter
+			addi 	$t1, $t1, 1		# Increment index
+			blt 	$t1, $s0, printLoop	# Loop if index < misses
+			
+		sub 	%reg, %reg, $t1			# Reset letter position back to start
+		Next_Line
+	.end_macro
+	
+	## Add user input to missed array
+	.macro Add_To_Missed %reg        		# reg = letter to add to missed string
+		add 	$t2, $s4, $s0    		# t2 =  s4 (missed letters) + shift by num of incorrect 
+		sub 	$t2, $t2, 1
+		sb 	%reg, 0($t2)        		# Save letter in t2
+	.end_macro
+	
+	## Add user input to guessed array
+	.macro Add_To_Guessed %reg
+		addi	$sp, $sp, -4			# Allocate 4 bytes
+		li 	$t1, 0				# t1 = index for guessedString 
+		
+		# Search for position of the letter match
+		do_in_word_iterator:
+			lb	$t0, 0($a1)		# Load character from the string
+			beq 	$t1, $s2, stop		# Stop if the end of the word is reached
+			addi 	$a1, $a1, 1		# Increment the string address to continue scanning
+			addi 	$t1, $t1, 1		# Increment t1 to match the string address
+			beq	$t0, $a2, do_in_found	# Branch if character matches
+			j 	do_in_word_iterator	# Jump back to the loop
+			
+		# Add letter to corresponding spot in guessedString
+		do_in_found:
+			add 	$t2, $s3, $t1		# t2 = guessedString + shift by index
+			add 	$t2, $t2, -1		# Shift index back by 1 to start at index 0
+			sb 	%reg, 0($t2)		# Save the letter into guessedString
+			j	do_in_word_iterator
+		stop:
+			addi	$sp, $sp, 4		# Deallocate space in stack
+	.end_macro
